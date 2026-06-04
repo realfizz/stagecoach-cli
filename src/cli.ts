@@ -2,6 +2,7 @@ import { Crust } from '@crustjs/core';
 import { helpPlugin, versionPlugin } from '@crustjs/plugins';
 import pkg from '../package.json';
 import { departuresCommand } from './commands/departures.js';
+import { fareCommand } from './commands/fare.js';
 import { initCommand } from './commands/init.js';
 import { liveCommandWithSubcommand } from './commands/live.js';
 import { routeCommand } from './commands/route.js';
@@ -16,6 +17,7 @@ const cli = new Crust('stagecoach-cli')
   .command(departuresCommand)
   .command(liveCommandWithSubcommand)
   .command(routeCommand)
+  .command(fareCommand)
   .run(() => {
     console.log('stagecoach-cli');
   });
