@@ -5,6 +5,7 @@ import { departuresCommand } from './commands/departures.js';
 import { fareCommand } from './commands/fare.js';
 import { initCommand } from './commands/init.js';
 import { liveCommandWithSubcommand } from './commands/live.js';
+import { operatorsCommand } from './commands/operators.js';
 import { routeCommand } from './commands/route.js';
 import { stopsCommand } from './commands/stops.js';
 
@@ -18,6 +19,7 @@ const cli = new Crust('stagecoach-cli')
   .command(liveCommandWithSubcommand)
   .command(routeCommand)
   .command(fareCommand)
+  .command(operatorsCommand)
   .run(() => {
     console.log('stagecoach-cli');
   });
