@@ -1,0 +1,29 @@
+{
+	"name": "stagecoach-cli",
+	"version": "0.0.0",
+	"type": "module",
+	"description": "A CLI built with Crust",
+	"files": [
+		"dist/cli",
+		"dist/cli.cmd",
+		"dist/*-bun-*"
+	],
+	"bin": {
+		"stagecoach-cli": "dist/cli"
+	},
+	"scripts": {
+		"dev": "bun run src/cli.ts",
+		"build": "crust build",
+		"package": "crust build --package",
+		"publish": "crust publish --stage-dir dist/npm",
+		"start": "./dist/cli",
+		"check:types": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@crustjs/core": "^0.0.18",
+		"@crustjs/crust": "^0.0.24",
+		"@crustjs/plugins": "^0.1.1",
+		"@types/bun": "latest",
+		"typescript": "^6"
+	}
+}
