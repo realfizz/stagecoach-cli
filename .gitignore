@@ -1,17 +1,18 @@
 # dependencies (bun install)
-node_modules
+node_modules/
 
 # output
-out
-dist
+out/
+dist/
+dist/npm/
 *.tgz
 
 # code coverage
-coverage
+coverage/
 *.lcov
 
 # logs
-logs
+logs/
 *.log
 report.*.*.*.*.json
 
@@ -25,10 +26,11 @@ report.*.*.*.*.json
 # caches
 .eslintcache
 .cache
+.bun/
 *.tsbuildinfo
 
 # IntelliJ based IDEs
-.idea
+.idea/
 
 # Finder (MacOS) folder config
 .DS_Store

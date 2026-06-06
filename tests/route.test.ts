@@ -1,81 +1,22 @@
-import { describe, expect, test } from 'bun:test';
-import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { cleanupTestConfig, runCli, runCliExpectError, setupIsolatedConfigDir, setupTestConfig } from '~~/tests/helpers.js';
 
-const CONFIG_DIR = join(process.env.HOME || '', '.config', 'stagecoach');
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+setupIsolatedConfigDir('route');
 
 describe('stagecoach route', () => {
-  test('route command exists and shows help', () => {
-    const output = execSync('bun run src/cli.ts route --help', {
-      encoding: 'utf-8',
-      cwd: `${import.meta.dir}/..`,
-    });
+  beforeEach(() => setupTestConfig());
+  afterEach(cleanupTestConfig);
+
+  test('route command shows help', () => {
+    const output = runCli('route --help');
     expect(output).toContain('route');
-    expect(output).toContain('Route details and pattern');
+    expect(output).toContain('Search timetable datasets');
   });
 
   test('route command shows error without API key', () => {
-    // Ensure no API key is configured
-    if (existsSync(CONFIG_FILE)) {
-      unlinkSync(CONFIG_FILE);
-    }
-
-    try {
-      execSync('bun run src/cli.ts route 101', {
-        encoding: 'utf-8',
-        cwd: `${import.meta.dir}/..`,
-      });
-    } catch (error) {
-      // Expected to fail without API key
-      expect((error as Error).message).toContain('BODS API key not configured');
-    }
+    cleanupTestConfig();
+    const result = runCliExpectError('route 101');
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('BODS API key not configured');
   });
-
-  test('route command accepts route number with API key', () => {
-    // Set up test API key
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-    writeFileSync(CONFIG_FILE, JSON.stringify({ bodsApiKey: 'test-key' }));
-
-    try {
-      const output = execSync('bun run src/cli.ts route 101', {
-        encoding: 'utf-8',
-        cwd: `${import.meta.dir}/..`,
-        timeout: 60000,
-      });
-      expect(output).toBeDefined();
-    } catch (error) {
-      expect((error as Error).message).toBeDefined();
-    } finally {
-      if (existsSync(CONFIG_FILE)) {
-        unlinkSync(CONFIG_FILE);
-      }
-    }
-  }, 60000);
-
-  test('route command supports --json flag with API key', () => {
-    // Set up test API key
-    if (!existsSync(CONFIG_DIR)) {
-      mkdirSync(CONFIG_DIR, { recursive: true });
-    }
-    writeFileSync(CONFIG_FILE, JSON.stringify({ bodsApiKey: 'test-key' }));
-
-    try {
-      const output = execSync('bun run src/cli.ts route 101 --json', {
-        encoding: 'utf-8',
-        cwd: `${import.meta.dir}/..`,
-        timeout: 60000,
-      });
-      expect(output).toBeDefined();
-    } catch (error) {
-      expect((error as Error).message).toBeDefined();
-    } finally {
-      if (existsSync(CONFIG_FILE)) {
-        unlinkSync(CONFIG_FILE);
-      }
-    }
-  }, 60000);
 });

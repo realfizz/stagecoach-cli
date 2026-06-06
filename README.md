@@ -1,85 +1,76 @@
 # stagecoach-cli
 
-A CLI tool for querying UK bus data from the Bus Open Data Service (BODS). Agent-first design — humans and AI agents use the same interface.
+> UK bus data in your terminal: timetables, routes, fares, and live vehicle positions from the [Bus Open Data Service](https://data.bus-data.dft.gov.uk/) (BODS).
+
+Designed for humans and AI agents. Every command supports `--json` for structured output.
+
+## Install
+
+```bash
+npm install -g stagecoach-cli
+```
+
+Or run without installing:
+
+```bash
+bunx stagecoach-cli --help
+```
 
 ## Quick Start
 
 ```bash
-# Install globally
-npm install -g stagecoach-cli
-
-# Or run without install
-bunx stagecoach-cli
-
-# Set up your API key
-stagecoach init
+stagecoach init                       # Save your BODS API key
+stagecoach stops "Magdalen Street"    # Find a stop by name
+stagecoach live 490008621A            # Live vehicles near a stop
+stagecoach route "stagecoach" --json  # Search timetable datasets
 ```
-
-## Features
-
-- **Find stops** by name, NaPTAN code, or nearby location
-- **Get departures** with real-time updates
-- **Track live** bus positions
-- **Look up routes** and patterns
-- **Check fares** between stops
-- **Search operators**
 
 ## Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `stagecoach init` | Set up BODS API key | `stagecoach init` |
-| `stagecoach stops <query>` | Find stops by name, code, or location | `stagecoach stops "Magdalen Street"` |
-| `stagecoach departures <stop>` | Next departures at a stop | `stagecoach departures 490008621A` |
-| `stagecoach live <stop>` | Real-time vehicle positions | `stagecoach live 490008621A` |
-| `stagecoach route <route>` | Route details and pattern | `stagecoach route 101` |
-| `stagecoach fare <from> <to>` | Ticket prices between stops | `stagecoach fare "Oxford" "London"` |
-| `stagecoach operators` | List all operators | `stagecoach operators` |
-| `stagecoach version` | Version info | `stagecoach version` |
+| `init` | Save your BODS API key | `stagecoach init` |
+| `stops <query>` | Find stops by name, NaPTAN code, or `lat,lon` | `stagecoach stops "Oxford Circus"` |
+| `live <target>` | Live vehicles near coordinates or a stop | `stagecoach live 51.752,-1.257` |
+| `live route <id>` | Live vehicles on a specific route | `stagecoach live route 101` |
+| `route <query>` | Search published timetable datasets | `stagecoach route "stagecoach"` |
+| `fare` | Search fare datasets | `stagecoach fare --query blackpool` |
+| `operators` | List or search operators | `stagecoach operators --query oxford` |
+| `version` | Print version | `stagecoach version` |
 
-## Agent-Friendly Output
-
-All commands support `--json` flag for structured output:
-
-```bash
-stagecoach stops "Magdalen Street" --json
-stagecoach departures 490008621A --json
-```
+Add `--json` to any command for agent-friendly output.
 
 ## Authentication
 
-Get a free API key at [data.bus-data.dft.gov.uk](https://data.bus-data.dft.gov.uk/):
+Get a free API key from [data.bus-data.dft.gov.uk](https://data.bus-data.dft.gov.uk/), then run:
 
 ```bash
 stagecoach init
 ```
 
-The key is stored in `~/.config/stagecoach/config.json`. You can also set the `BODS_API_KEY` environment variable.
+The key is stored in `~/.config/stagecoach/config.json`. You can also set `BODS_API_KEY` as an environment variable.
 
 ## Development
 
 ```bash
-# Clone the repo
-git clone https://github.com/your-username/stagecoach-cli.git
+git clone https://github.com/your-org/stagecoach-cli.git
 cd stagecoach-cli
-
-# Install dependencies
 bun install
-
-# Run in development mode
 bun run dev
-
-# Run tests
 bun test
-
-# Build
 bun run build
 ```
 
+Run `bun run check` before committing (lint + typecheck).
+
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT © stagecoach-cli contributors
+[MIT](LICENSE)

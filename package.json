@@ -2,7 +2,7 @@
   "name": "stagecoach-cli",
   "version": "0.0.0",
   "type": "module",
-  "description": "A CLI built with Crust",
+  "description": "UK bus data CLI: timetables, routes, fares, and live positions from BODS",
   "files": [
     "dist/cli",
     "dist/cli.cmd",
@@ -24,14 +24,18 @@
     "format:check": "bunx @biomejs/biome format .",
     "check": "bun run lint && bun run typecheck",
     "test": "bun test",
+    "ci": "bun install --frozen-lockfile && bun run check && bun test",
     "prepare": "bunx lefthook install"
   },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
   "devDependencies": {
-    "@crustjs/core": "^0.0.18",
-    "@crustjs/crust": "^0.0.24",
-    "@crustjs/plugins": "^0.1.1",
-    "@types/bun": "latest",
+    "@crustjs/core": "0.0.18",
+    "@crustjs/crust": "0.0.24",
+    "@crustjs/plugins": "0.1.1",
+    "@types/bun": "1.3.14",
     "typescript": "^6",
-    "lefthook": "latest"
+    "lefthook": "2.1.9"
   }
 }
