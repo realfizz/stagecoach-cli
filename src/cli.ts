@@ -1,27 +1,22 @@
 import { Crust } from '@crustjs/core';
 import { helpPlugin, versionPlugin } from '@crustjs/plugins';
-import pkg from '../package.json';
-import { departuresCommand } from './commands/departures.js';
-import { fareCommand } from './commands/fare.js';
-import { initCommand } from './commands/init.js';
-import { liveCommandWithSubcommand } from './commands/live.js';
-import { operatorsCommand } from './commands/operators.js';
-import { routeCommand } from './commands/route.js';
-import { stopsCommand } from './commands/stops.js';
+import { fareCommand } from '~/commands/fare.js';
+import { initCommand } from '~/commands/init.js';
+import { liveCommandWithSubcommand } from '~/commands/live.js';
+import { operatorsCommand } from '~/commands/operators.js';
+import { routeCommand } from '~/commands/route.js';
+import { stopsCommand } from '~/commands/stops.js';
+import pkg from '~~/package.json';
 
 const cli = new Crust('stagecoach-cli')
-  .meta({ description: 'A CLI built with Crust' })
+  .meta({ description: 'UK bus data CLI: timetables, routes, fares, live positions' })
   .use(versionPlugin(pkg.version))
   .use(helpPlugin())
   .command(initCommand)
   .command(stopsCommand)
-  .command(departuresCommand)
   .command(liveCommandWithSubcommand)
   .command(routeCommand)
   .command(fareCommand)
-  .command(operatorsCommand)
-  .run(() => {
-    console.log('stagecoach-cli');
-  });
+  .command(operatorsCommand);
 
 await cli.execute();

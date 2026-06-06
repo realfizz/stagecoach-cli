@@ -1,131 +1,117 @@
 import { Crust } from '@crustjs/core';
-import { getBodsApiKey } from '../config.js';
+import { BODS_DATAFEED_PATH, bodsFetchText } from '~/api/bods.js';
+import { getStopByCode, isCoordinates, parseCoordinates } from '~/api/naptan.js';
+import { runCommand } from '~/commands/_run.js';
+import type { VehicleLocation } from '~/types.js';
 
-interface VehicleLocation {
-  vehicleId: string;
-  latitude: number;
-  longitude: number;
-  heading: number;
-  speed: number;
-  destination: string;
-  routeNumber: string;
-  operatorName: string;
-  originStop: string;
-  timestamp: Date;
+function extractTag(xml: string, tag: string): string {
+  const regex = new RegExp(`<${tag}>([^<]*)<\\/${tag}>`);
+  const match = xml.match(regex);
+  return match?.[1] || '';
 }
 
-const BODS_API_BASE = 'https://data.bus-data.dft.gov.uk';
+export function parseSiriVmVehicles(xml: string): VehicleLocation[] {
+  const vehicles: VehicleLocation[] = [];
+  const activityRegex = /<VehicleActivity>([\s\S]*?)<\/VehicleActivity>/g;
+  let match = activityRegex.exec(xml);
 
-async function fetchVehicleLocations(stopCode: string): Promise<VehicleLocation[]> {
-  const apiKey = getBodsApiKey();
+  while (match) {
+    const activity = match[1] || '';
+    const journeyMatch = activity.match(/<MonitoredVehicleJourney>([\s\S]*?)<\/MonitoredVehicleJourney>/);
+    if (!journeyMatch) {
+      match = activityRegex.exec(xml);
+      continue;
+    }
+    const journey = journeyMatch[1] || '';
 
-  if (!apiKey) {
-    throw new Error('BODS API key not configured. Run: stagecoach init');
-  }
+    const locMatch = journey.match(/<VehicleLocation>([\s\S]*?)<\/VehicleLocation>/);
+    if (!locMatch) {
+      match = activityRegex.exec(xml);
+      continue;
+    }
+    const loc = locMatch[1] || '';
 
-  const url = `${BODS_API_BASE}/api/v1/bus/stop/${encodeURIComponent(stopCode)}/live?apiKey=${apiKey}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`BODS API error: ${response.status} ${response.statusText}`);
+    const latitude = Number(extractTag(loc, 'Latitude'));
+    const longitude = Number(extractTag(loc, 'Longitude'));
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude === 0 || longitude === 0) {
+      match = activityRegex.exec(xml);
+      continue;
     }
 
-    const data = (await response.json()) as {
-      vehicles?: Array<{
-        vehicleId: string;
-        latitude: number;
-        longitude: number;
-        heading: number;
-        speed: number;
-        destination: string;
-        route: string;
-        operatorName: string;
-        originStop: string;
-        timestamp: string;
-      }>;
-    };
+    vehicles.push({
+      vehicleRef: extractTag(journey, 'VehicleRef'),
+      lineRef: extractTag(journey, 'LineRef'),
+      publishedLineName: extractTag(journey, 'PublishedLineName'),
+      operatorRef: extractTag(journey, 'OperatorRef'),
+      originRef: extractTag(journey, 'OriginRef'),
+      originName: extractTag(journey, 'OriginName'),
+      destinationRef: extractTag(journey, 'DestinationRef'),
+      destinationName: extractTag(journey, 'DestinationName'),
+      latitude,
+      longitude,
+      bearing: Number(extractTag(journey, 'Bearing')) || 0,
+      monitored: extractTag(journey, 'Monitored') === 'true',
+      recordedAt: extractTag(activity, 'RecordedAtTime'),
+    });
 
-    const locations: VehicleLocation[] = [];
-
-    for (const vehicle of data.vehicles || []) {
-      locations.push({
-        vehicleId: vehicle.vehicleId,
-        latitude: vehicle.latitude,
-        longitude: vehicle.longitude,
-        heading: vehicle.heading,
-        speed: vehicle.speed,
-        destination: vehicle.destination,
-        routeNumber: vehicle.route,
-        operatorName: vehicle.operatorName,
-        originStop: vehicle.originStop,
-        timestamp: new Date(vehicle.timestamp),
-      });
-    }
-
-    return locations;
-  } finally {
-    clearTimeout(timeout);
+    match = activityRegex.exec(xml);
   }
+
+  return vehicles;
 }
 
-async function fetchVehiclesByRoute(routeNumber: string): Promise<VehicleLocation[]> {
-  const apiKey = getBodsApiKey();
+export function createBoundingBox(lat: number, lon: number, radiusKm: number): string {
+  const KM_PER_DEGREE_LAT = 111;
+  const DEG_TO_RAD = Math.PI / 180;
+  const latDelta = radiusKm / KM_PER_DEGREE_LAT;
+  const lonDelta = radiusKm / (KM_PER_DEGREE_LAT * Math.cos(lat * DEG_TO_RAD));
+  return `${lon - lonDelta},${lat - latDelta},${lon + lonDelta},${lat + latDelta}`;
+}
 
-  if (!apiKey) {
-    throw new Error('BODS API key not configured. Run: stagecoach init');
-  }
-
-  const url = `${BODS_API_BASE}/api/v1/bus/route/${encodeURIComponent(routeNumber)}/live?apiKey=${apiKey}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`BODS API error: ${response.status} ${response.statusText}`);
+export async function resolveTargetToBbox(target: string): Promise<string> {
+  if (isCoordinates(target)) {
+    const coords = parseCoordinates(target);
+    if (!coords) {
+      throw new Error('Invalid coordinates');
     }
-
-    const data = (await response.json()) as {
-      vehicles?: Array<{
-        vehicleId: string;
-        latitude: number;
-        longitude: number;
-        heading: number;
-        speed: number;
-        destination: string;
-        route: string;
-        operatorName: string;
-        originStop: string;
-        timestamp: string;
-      }>;
-    };
-
-    const locations: VehicleLocation[] = [];
-
-    for (const vehicle of data.vehicles || []) {
-      locations.push({
-        vehicleId: vehicle.vehicleId,
-        latitude: vehicle.latitude,
-        longitude: vehicle.longitude,
-        heading: vehicle.heading,
-        speed: vehicle.speed,
-        destination: vehicle.destination,
-        routeNumber: vehicle.route,
-        operatorName: vehicle.operatorName,
-        originStop: vehicle.originStop,
-        timestamp: new Date(vehicle.timestamp),
-      });
-    }
-
-    return locations;
-  } finally {
-    clearTimeout(timeout);
+    return createBoundingBox(coords.lat, coords.lon, 1);
   }
+  const stop = await getStopByCode(target);
+  if (!stop) {
+    throw new Error(`Stop not found: ${target}`);
+  }
+  if (stop.Latitude == null || stop.Longitude == null) {
+    throw new Error(`Stop has no location data: ${target}`);
+  }
+  return createBoundingBox(stop.Latitude, stop.Longitude, 1);
+}
+
+async function fetchVehiclesNearTarget(target: string): Promise<VehicleLocation[]> {
+  const bbox = await resolveTargetToBbox(target);
+  const xml = await bodsFetchText({
+    path: BODS_DATAFEED_PATH,
+    params: { boundingBox: bbox },
+  });
+  return parseSiriVmVehicles(xml);
+}
+
+async function fetchVehiclesOnRoute(route: string): Promise<VehicleLocation[]> {
+  const xml = await bodsFetchText({
+    path: BODS_DATAFEED_PATH,
+    params: { lineRef: route },
+  });
+  return parseSiriVmVehicles(xml);
+}
+
+export function formatVehicles(vehicles: VehicleLocation[], label: string): string {
+  let result = `Vehicles ${label}:\n`;
+  for (const loc of vehicles) {
+    result += `  ${loc.vehicleRef} (${loc.publishedLineName}): ${loc.latitude}, ${loc.longitude}\n`;
+    result += `    ${loc.originName} → ${loc.destinationName}\n`;
+    result += `    Operator: ${loc.operatorRef}\n`;
+    result += '\n';
+  }
+  return result;
 }
 
 const liveCommand = new Crust('live')
@@ -134,7 +120,7 @@ const liveCommand = new Crust('live')
     {
       name: 'target',
       type: 'string',
-      description: 'Stop code or route number',
+      description: 'Coordinates (lat,lon) or stop code',
       required: true,
     },
   ])
@@ -163,56 +149,22 @@ const routeSubcommand = new Crust('route')
       default: false,
     },
   })
-  .run(async ({ args, flags }) => {
-    try {
-      const locations = await fetchVehiclesByRoute(args.route);
-
-      if (flags.json) {
-        console.log(JSON.stringify(locations, null, 2));
-        return;
-      }
-
-      if (locations.length === 0) {
-        console.log('No vehicles found on this route');
-        return;
-      }
-
-      console.log(`Vehicles on route ${args.route}:\n`);
-      for (const loc of locations) {
-        console.log(`Vehicle ${loc.vehicleId}: ${loc.latitude}, ${loc.longitude}`);
-        console.log(`  Heading: ${loc.heading}°, Speed: ${loc.speed} mph`);
-        console.log(`  Destination: ${loc.destination}`);
-        console.log('');
-      }
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      process.exit(1);
-    }
+  .run(({ args, flags }) => {
+    const route = args.route as string;
+    return runCommand({
+      flags: { json: flags.json as boolean },
+      empty: 'No vehicles found on this route',
+      work: () => fetchVehiclesOnRoute(route),
+      format: (vehicles) => formatVehicles(vehicles, `on route ${route}`),
+    });
   });
 
-export const liveCommandWithSubcommand = liveCommand.command(routeSubcommand).run(async ({ args, flags }) => {
-  try {
-    const locations = await fetchVehicleLocations(args.target);
-
-    if (flags.json) {
-      console.log(JSON.stringify(locations, null, 2));
-      return;
-    }
-
-    if (locations.length === 0) {
-      console.log('No vehicles found near this stop');
-      return;
-    }
-
-    console.log(`Vehicles near ${args.target}:\n`);
-    for (const loc of locations) {
-      console.log(`Vehicle ${loc.vehicleId}: ${loc.latitude}, ${loc.longitude}`);
-      console.log(`  Heading: ${loc.heading}°, Speed: ${loc.speed} mph`);
-      console.log(`  Destination: ${loc.destination}`);
-      console.log('');
-    }
-  } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    process.exit(1);
-  }
+export const liveCommandWithSubcommand = liveCommand.command(routeSubcommand).run(({ args, flags }) => {
+  const target = args.target as string;
+  return runCommand({
+    flags: { json: flags.json as boolean },
+    empty: 'No vehicles found near this location',
+    work: () => fetchVehiclesNearTarget(target),
+    format: (vehicles) => formatVehicles(vehicles, `near ${target}`),
+  });
 });
