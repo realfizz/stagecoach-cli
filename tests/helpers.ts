@@ -1,4 +1,3 @@
-import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -46,12 +45,25 @@ export function readTestConfig(): Record<string, unknown> {
 export const CLI_CWD = `${import.meta.dir}/..`;
 
 export function runCli(args: string): string {
-  return execSync(`bun run src/cli.ts ${args}`, {
-    encoding: 'utf-8',
+  const result = Bun.spawnSync(['bun', 'run', 'src/cli.ts', ...args.split(' ')], {
     cwd: CLI_CWD,
-    env: { ...process.env },
+    env: { ...process.env, STAGECOACH_CONFIG_DIR: getConfigDir() },
     timeout: 60_000,
   });
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString();
+    const stdout = result.stdout.toString();
+    const err = new Error(`CLI exited ${result.exitCode}: ${stderr || stdout}`) as Error & {
+      stdout?: string;
+      stderr?: string;
+      status?: number;
+    };
+    err.stdout = stdout;
+    err.stderr = stderr;
+    err.status = result.exitCode;
+    throw err;
+  }
+  return result.stdout.toString();
 }
 
 export function runCliExpectError(args: string): { stdout: string; stderr: string; exitCode: number } {
