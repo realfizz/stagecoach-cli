@@ -1,70 +1,50 @@
 import { Crust } from '@crustjs/core';
-import { getStopByCode, isCoordinates, isNaPTANCode, parseCoordinates, searchStopsByName, searchStopsByProximity } from '../api/naptan.js';
+import { getStopByCode, isCoordinates, isNaPTANCode, parseCoordinates, searchStopsByName, searchStopsByProximity } from '~/api/naptan.js';
+import { runCommand } from '~/commands/_run.js';
+import type { NaptanStop } from '~/types.js';
+
+export async function searchStops(query: string): Promise<NaptanStop[]> {
+  if (isNaPTANCode(query)) {
+    const stop = await getStopByCode(query);
+    return stop ? [stop] : [];
+  }
+  if (isCoordinates(query)) {
+    const coords = parseCoordinates(query);
+    if (!coords) {
+      throw new Error('Invalid coordinates');
+    }
+    return searchStopsByProximity(coords.lat, coords.lon);
+  }
+  return searchStopsByName(query);
+}
 
 export const stopsCommand = new Crust('stops')
   .meta({ description: 'Find stops by name, code, or location' })
   .args([{ name: 'query', type: 'string', required: true }])
   .flags({
-    json: { type: 'boolean', description: 'Output as JSON' },
+    json: { type: 'boolean', description: 'Output as JSON', default: false },
   })
-  .run(async ({ args, flags }) => {
+  .run(({ args, flags }) => {
     const query = args.query;
-    let stops: Array<{
-      AtcoCode: string;
-      StopCode: string;
-      Name: string;
-      CommonName: string;
-      Street: string;
-      Indicator: string;
-      Bearing: string;
-      Locality: string;
-      ParentLocalityName: string;
-      Latitude: number;
-      Longitude: number;
-      StopType: string;
-      TimingStatus: string;
-      Status: string;
-    }> = [];
-
-    try {
-      if (isNaPTANCode(query)) {
-        // NaPTAN code lookup
-        const stop = await getStopByCode(query);
-        stops = stop ? [stop] : [];
-      } else if (isCoordinates(query)) {
-        // Proximity search
-        const { lat, lon } = parseCoordinates(query);
-        stops = await searchStopsByProximity(lat, lon);
-      } else {
-        // Name search
-        stops = await searchStopsByName(query);
-      }
-
-      if (stops.length === 0) {
-        console.log('No stops found');
-        return;
-      }
-
-      if (flags.json) {
-        console.log(JSON.stringify(stops, null, 2));
-        return;
-      }
-
-      // Plain text output
-      console.log(`Found ${stops.length} stop(s):\n`);
-      for (const stop of stops) {
-        const name = stop.CommonName || stop.Name;
-        const indicator = stop.Indicator ? ` (${stop.Indicator})` : '';
-        const street = stop.Street ? ` - ${stop.Street}` : '';
-        console.log(`${name}${indicator}${street}`);
-        console.log(`  Code: ${stop.AtcoCode}`);
-        if (stop.Latitude && stop.Longitude) {
-          console.log(`  Location: ${stop.Latitude}, ${stop.Longitude}`);
+    return runCommand({
+      flags: { json: flags.json as boolean },
+      empty: 'No stops found',
+      work: () => searchStops(query),
+      format: (stops) => {
+        let out = `Found ${stops.length} stop(s):\n\n`;
+        for (const stop of stops) {
+          const name = stop.CommonName;
+          const indicator = stop.Indicator ? ` (${stop.Indicator})` : '';
+          const street = stop.Street ? ` - ${stop.Street}` : '';
+          const town = stop.Town ? ` [${stop.Town}]` : '';
+          out += `${name}${indicator}${street}${town}\n`;
+          out += `  Code: ${stop.AtcoCode}\n`;
+          if (stop.Latitude != null && stop.Longitude != null) {
+            out += `  Location: ${stop.Latitude}, ${stop.Longitude}\n`;
+          }
+          out += '\n';
         }
-        console.log('');
-      }
-    } catch (error) {
-      console.error('Error fetching stops:', error);
-      process.exit(1);
-    }
+        return out;
+      },
+    });
   });

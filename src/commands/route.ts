@@ -1,72 +1,30 @@
 import { Crust } from '@crustjs/core';
-import { getBodsApiKey } from '../config.js';
+import { BODS_DATASETS_LIMIT, BODS_DATASETS_PATH, type BodsResponse, bodsFetch } from '~/api/bods.js';
+import { runCommand } from '~/commands/_run.js';
+import type { BodsDataset, RouteInfo } from '~/types.js';
 
-interface RouteDetails {
-  routeNumber: string;
-  operatorName: string;
-  origin: string;
-  destination: string;
-  stops: string[];
-  description: string;
-}
+async function searchTimetables(query: string): Promise<RouteInfo[]> {
+  const data = await bodsFetch<BodsResponse<BodsDataset>>({
+    path: BODS_DATASETS_PATH,
+    params: { search: query, status: 'published', limit: String(BODS_DATASETS_LIMIT) },
+  });
 
-const BODS_API_BASE = 'https://data.bus-data.dft.gov.uk';
-
-async function fetchRouteDetails(routeNumber: string): Promise<RouteDetails> {
-  const apiKey = getBodsApiKey();
-
-  if (!apiKey) {
-    throw new Error('BODS API key not configured. Run: stagecoach init');
-  }
-
-  const url = `${BODS_API_BASE}/api/v1/bus/route/${encodeURIComponent(routeNumber)}?apiKey=${apiKey}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`BODS API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as {
-      routes?: Array<{
-        routeNumber: string;
-        operatorName: string;
-        origin: string;
-        destination: string;
-        stops: string[];
-        description: string;
-      }>;
-    };
-
-    const route = data.routes?.[0];
-
-    if (!route) {
-      throw new Error(`Route ${routeNumber} not found`);
-    }
-
-    return {
-      routeNumber: route.routeNumber,
-      operatorName: route.operatorName,
-      origin: route.origin,
-      destination: route.destination,
-      stops: route.stops || [],
-      description: route.description,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+  return (data.results || []).map((r) => ({
+    operatorName: r.operatorName || 'Unknown',
+    description: r.description || '',
+    lines: r.lines || [],
+    adminAreas: (r.adminAreas || []).map((a) => a.name),
+    datasetId: r.id,
+  }));
 }
 
 export const routeCommand = new Crust('route')
-  .meta({ description: 'Route details and pattern' })
+  .meta({ description: 'Search timetable datasets' })
   .args([
     {
-      name: 'route',
+      name: 'query',
       type: 'string',
-      description: 'Route number',
+      description: 'Route number or operator name',
       required: true,
     },
   ])
@@ -77,29 +35,21 @@ export const routeCommand = new Crust('route')
       default: false,
     },
   })
-  .run(async ({ args, flags }) => {
-    try {
-      const routeDetails = await fetchRouteDetails(args.route);
-
-      if (flags.json) {
-        console.log(JSON.stringify(routeDetails, null, 2));
-        return;
-      }
-
-      console.log(`Route ${routeDetails.routeNumber}:\n`);
-      console.log(`Operator: ${routeDetails.operatorName}`);
-      console.log(`From: ${routeDetails.origin}`);
-      console.log(`To: ${routeDetails.destination}`);
-      console.log(`Description: ${routeDetails.description}`);
-      console.log(`\nStops (${routeDetails.stops.length}):`);
-      for (const stop of routeDetails.stops.slice(0, 10)) {
-        console.log(`  - ${stop}`);
-      }
-      if (routeDetails.stops.length > 10) {
-        console.log(`  ... and ${routeDetails.stops.length - 10} more stops`);
-      }
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      process.exit(1);
-    }
+  .run(({ args, flags }) => {
+    const query = args.query;
+    return runCommand({
+      flags: { json: flags.json as boolean },
+      empty: 'No matching timetable datasets found',
+      work: () => searchTimetables(query),
+      format: (routes) => {
+        let out = `Timetable datasets matching "${query}":\n\n`;
+        for (const route of routes) {
+          out += `${route.operatorName} (Dataset #${route.datasetId})\n`;
+          out += `  Lines: ${route.lines.join(', ') || 'N/A'}\n`;
+          out += `  Areas: ${route.adminAreas.join(', ') || 'N/A'}\n`;
+          out += `  ${route.description}\n\n`;
+        }
+        return out;
+      },
+    });
   });

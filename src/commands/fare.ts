@@ -1,111 +1,51 @@
 import { Crust } from '@crustjs/core';
-import { getBodsApiKey } from '../config.js';
+import { BODS_FARES_LIMIT, BODS_FARES_PATH, type BodsResponse, bodsFetch } from '~/api/bods.js';
+import { runCommand } from '~/commands/_run.js';
+import type { FareDataset } from '~/types.js';
 
-interface Fare {
-  productName: string;
-  price: number;
-  currency: string;
-  validFrom: string;
-  validTo: string;
-  description: string;
-}
+async function searchFares(query: string): Promise<FareDataset[]> {
+  const data = await bodsFetch<BodsResponse<FareDataset>>({
+    path: BODS_FARES_PATH,
+    params: { status: 'published', limit: String(BODS_FARES_LIMIT), ...(query ? { search: query } : {}) },
+  });
 
-const BODS_API_BASE = 'https://data.bus-data.dft.gov.uk';
-
-async function fetchFares(fromStop: string, toStop: string): Promise<Fare[]> {
-  const apiKey = getBodsApiKey();
-
-  if (!apiKey) {
-    throw new Error('BODS API key not configured. Run: stagecoach init');
-  }
-
-  const url = `${BODS_API_BASE}/api/v1/bus/fares?from=${encodeURIComponent(fromStop)}&to=${encodeURIComponent(toStop)}&apiKey=${apiKey}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`BODS API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as {
-      fares?: Array<{
-        productName: string;
-        price: number;
-        currency: string;
-        validFrom: string;
-        validTo: string;
-        description: string;
-      }>;
-    };
-
-    const fares: Fare[] = [];
-
-    for (const fare of data.fares || []) {
-      fares.push({
-        productName: fare.productName,
-        price: fare.price,
-        currency: fare.currency,
-        validFrom: fare.validFrom,
-        validTo: fare.validTo,
-        description: fare.description,
-      });
-    }
-
-    return fares;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return (data.results || []).map((r) => ({
+    id: r.id,
+    operatorName: r.operatorName || 'Unknown',
+    description: r.description || '',
+    noc: r.noc || [],
+    status: r.status || '',
+  }));
 }
 
 export const fareCommand = new Crust('fare')
-  .meta({ description: 'Ticket prices between stops' })
-  .args([
-    {
-      name: 'from',
-      type: 'string',
-      description: 'Origin stop name or code',
-      required: true,
-    },
-    {
-      name: 'to',
-      type: 'string',
-      description: 'Destination stop name or code',
-      required: true,
-    },
-  ])
+  .meta({ description: 'Search for fare datasets' })
   .flags({
+    query: {
+      type: 'string',
+      description: 'Search query (operator name, area, etc.)',
+    },
     json: {
       type: 'boolean',
       description: 'Output as JSON',
       default: false,
     },
   })
-  .run(async ({ args, flags }) => {
-    try {
-      const fares = await fetchFares(args.from, args.to);
-
-      if (flags.json) {
-        console.log(JSON.stringify(fares, null, 2));
-        return;
-      }
-
-      if (fares.length === 0) {
-        console.log('No fares found');
-        return;
-      }
-
-      console.log(`Fares from ${args.from} to ${args.to}:\n`);
-      for (const fare of fares) {
-        console.log(`${fare.productName}: ${fare.currency}${fare.price}`);
-        console.log(`  ${fare.description}`);
-        console.log(`  Valid: ${fare.validFrom} - ${fare.validTo}`);
-        console.log('');
-      }
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      process.exit(1);
-    }
+  .run(({ flags }) => {
+    const query = (flags.query as string) || '';
+    return runCommand({
+      flags: { json: flags.json as boolean },
+      empty: 'No fare datasets found',
+      work: () => searchFares(query),
+      format: (fares) => {
+        const label = query || 'all';
+        let out = `Fare datasets (${label}):\n\n`;
+        for (const fare of fares) {
+          out += `${fare.operatorName} (Dataset #${fare.id})\n`;
+          out += `  NOC: ${fare.noc.join(', ') || 'N/A'}\n`;
+          out += `  ${fare.description}\n\n`;
+        }
+        return out;
+      },
+    });
   });

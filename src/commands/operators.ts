@@ -1,66 +1,39 @@
 import { Crust } from '@crustjs/core';
-import { getBodsApiKey } from '../config.js';
-
-interface Operator {
-  name: string;
-  nocCode: string;
-  servicesCount: number;
-  description: string;
-}
-
-const BODS_API_BASE = 'https://data.bus-data.dft.gov.uk';
+import { BODS_DATASETS_PATH, BODS_OPERATORS_LIMIT, type BodsResponse, bodsFetch } from '~/api/bods.js';
+import { runCommand } from '~/commands/_run.js';
+import type { BodsDataset, Operator } from '~/types.js';
 
 async function fetchOperators(searchQuery?: string): Promise<Operator[]> {
-  const apiKey = getBodsApiKey();
+  const params: Record<string, string> = { status: 'published', limit: String(BODS_OPERATORS_LIMIT) };
+  if (searchQuery) params.search = searchQuery;
 
-  if (!apiKey) {
-    throw new Error('BODS API key not configured. Run: stagecoach init');
-  }
+  const data = await bodsFetch<BodsResponse<BodsDataset>>({
+    path: BODS_DATASETS_PATH,
+    params,
+  });
 
-  let url = `${BODS_API_BASE}/api/v1/bus/operators?apiKey=${apiKey}`;
+  const operatorMap = new Map<string, Operator>();
 
-  if (searchQuery) {
-    url += `&query=${encodeURIComponent(searchQuery)}`;
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`BODS API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as {
-      operators?: Array<{
-        name: string;
-        nocCode: string;
-        servicesCount: number;
-        description: string;
-      }>;
-    };
-
-    const operators: Operator[] = [];
-
-    for (const op of data.operators || []) {
-      operators.push({
-        name: op.name,
-        nocCode: op.nocCode,
-        servicesCount: op.servicesCount,
-        description: op.description,
+  for (const r of data.results || []) {
+    const name = r.operatorName || 'Unknown';
+    const existing = operatorMap.get(name);
+    if (existing) {
+      existing.datasetsCount++;
+    } else {
+      operatorMap.set(name, {
+        name,
+        nocCode: (r.noc || []).join(', '),
+        datasetsCount: 1,
+        description: r.description || '',
       });
     }
-
-    return operators;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return Array.from(operatorMap.values()).sort((a, b) => b.datasetsCount - a.datasetsCount);
 }
 
 export const operatorsCommand = new Crust('operators')
-  .meta({ description: 'List all operators' })
+  .meta({ description: 'List operators from published timetable datasets' })
   .flags({
     query: {
       type: 'string',
@@ -72,29 +45,20 @@ export const operatorsCommand = new Crust('operators')
       default: false,
     },
   })
-  .run(async ({ flags }) => {
-    try {
-      const operators = await fetchOperators(flags.query as string | undefined);
-
-      if (flags.json) {
-        console.log(JSON.stringify(operators, null, 2));
-        return;
-      }
-
-      if (operators.length === 0) {
-        console.log('No operators found');
-        return;
-      }
-
-      console.log(`Operators:\n`);
-      for (const op of operators) {
-        console.log(`${op.name} (${op.nocCode})`);
-        console.log(`  Services: ${op.servicesCount}`);
-        console.log(`  ${op.description}`);
-        console.log('');
-      }
-    } catch (error) {
-      console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      process.exit(1);
-    }
+  .run(({ flags }) => {
+    const query = (flags.query as string) || '';
+    return runCommand({
+      flags: { json: flags.json as boolean },
+      empty: 'No operators found',
+      work: () => fetchOperators(query),
+      format: (operators) => {
+        const label = query || 'all';
+        let out = `Operators (${label}):\n\n`;
+        for (const op of operators) {
+          out += `${op.name} (NOC: ${op.nocCode || 'N/A'})\n`;
+          out += `  Datasets: ${op.datasetsCount}\n\n`;
+        }
+        return out;
+      },
+    });
   });
